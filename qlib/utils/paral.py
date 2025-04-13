@@ -54,6 +54,62 @@ def datetime_groupby_apply(
             return getattr(df.groupby(axis=axis, level=level), apply_func)()
         return df.groupby(axis=axis, level=level).apply(apply_func)
 
+    # --- 修改後的 _naive_group_apply ---
+    def _naive_group_apply(current_df):  # 將參數名改為 current_df 以區分外層的 df
+        # 1. 保存傳入的 current_df (即 sub_df) 的原始索引名稱
+        original_names = current_df.index.names
+        # print(f"DEBUG [_naive_group_apply]: 輸入 df 索引名稱: {original_names}, 層級數: {current_df.index.nlevels}")
+        result_df = None
+
+        # 2. 執行原始的分組和應用邏輯
+        if isinstance(apply_func, str):
+            result_df = getattr(current_df.groupby(
+                axis=axis, level=level), apply_func)()
+        else:
+            # ProcessInf 會走這個分支
+            try:
+                result_df = current_df.groupby(
+                    axis=axis, level=level).apply(apply_func)  # 這一步會增加索引層級
+            except ValueError as e:
+                print(
+                    f"在 groupby/apply 中為索引 {current_df.index.names} 發生錯誤: {e}")
+                raise e
+
+            # 檢查並修正索引結構
+            if result_df is not None and isinstance(result_df.index, pd.MultiIndex):
+                # 主要情況：檢查層級數是否比原始多 1
+                if result_df.index.nlevels == len(original_names) + 1:
+                    # print(f"DEBUG: 結果層級數為 {result_df.index.nlevels} (預期 {len(original_names)}). 嘗試移除 level 0 並恢復名稱。")
+                    try:
+                        # 移除由 apply 添加的最外層索引 (level 0)
+                        result_df_reset = result_df.reset_index(
+                            level=0, drop=True)
+                        # 將原始名稱賦給現在層級數正確的索引
+                        result_df_reset.index.names = original_names
+                        # print(f"DEBUG: 成功移除 level 0 並設置名稱為 {original_names}.")
+                        result_df = result_df_reset  # 使用修正後的 DataFrame
+                    except Exception as e_fix:
+                        print(
+                            f"ERROR: 嘗試移除 level 0 或設置名稱時失敗: {e_fix}. 返回可能帶有錯誤索引的 DataFrame。")
+
+                # 次要情況：層級數正確，但名稱錯誤 (理論上不太可能發生在此場景，但保留檢查)
+                elif result_df.index.nlevels == len(original_names) and list(result_df.index.names) != list(original_names):
+                    print(
+                        f"DEBUG: 修正索引名稱 (層級數匹配)。原始: {result_df.index.names}, 恢復為: {original_names}")
+                    try:
+                        result_df.index.names = original_names
+                    except ValueError as ve_set:
+                        print(f"ERROR: 即使層級數匹配，設置名稱時仍出錯: {ve_set}")
+
+                # 其他情況 (層級數變少或未預料的變化)，暫不處理，保留 result_df 原樣
+
+            elif result_df is not None:
+                # print(f"DEBUG [_naive_group_apply]: 結果索引不是 MultiIndex: {type(result_df.index)}")
+                pass
+
+        return result_df
+    # --- _naive_group_apply 結束 ---
+
     if n_jobs != 1:
         dfs = ParallelExt(n_jobs=n_jobs)(
             delayed(_naive_group_apply)(sub_df) for idx, sub_df in df.resample(resample_rule, axis=axis, level=level)
