@@ -159,22 +159,48 @@ class TanhProcess(Processor):
         return tanh_denoise(df)
 
 
+# class ProcessInf(Processor):
+#     """Process infinity"""
+
+#     def __call__(self, df):
+#         def replace_inf(data):
+#             def process_inf(df):
+#                 for col in df.columns:
+#                     # FIXME: Such behavior is very weird
+#                     df[col] = df[col].replace(
+#                         [np.inf, -np.inf], df[col][~np.isinf(df[col])].mean())
+#                 return df
+
+#             data = datetime_groupby_apply(data, process_inf)
+#             data.sort_index(inplace=True)
+#             return data
+#         return replace_inf(df)
+
 class ProcessInf(Processor):
-    """Process infinity"""
+    """Process infinity values in dataframe by replacing them with the mean of non-infinite values"""
 
     def __call__(self, df):
-        def replace_inf(data):
-            def process_inf(df):
-                for col in df.columns:
-                    # FIXME: Such behavior is very weird
-                    df[col] = df[col].replace(
-                        [np.inf, -np.inf], df[col][~np.isinf(df[col])].mean())
-                return df
+        def process_inf(df):
+            for col in df.columns:
+                # 首先檢查列是否包含無窮值
+                if np.isinf(df[col]).any():
+                    # 獲取非無窮值
+                    non_inf_values = df[col][~np.isinf(df[col])]
+                    # 只有在有非無窮值的情況下才計算均值
+                    if len(non_inf_values) > 0:
+                        mean_value = non_inf_values.mean()
+                        # 替換無窮值為均值
+                        df[col] = df[col].replace(
+                            [np.inf, -np.inf], mean_value)
+                    else:
+                        # 如果列全是無窮值，則替換為 NaN
+                        df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+            return df
 
-            data = datetime_groupby_apply(data, process_inf)
-            data.sort_index(inplace=True)
-            return data
-        return replace_inf(df)
+        # 應用 datetime_groupby_apply 函數處理數據
+        processed_df = datetime_groupby_apply(df, process_inf)
+        processed_df.sort_index(inplace=True)
+        return processed_df
 
 
 class Fillna(Processor):
@@ -432,15 +458,3 @@ class TimeRangeFlt(InstProcessor):
         ):
             return df
         return df.head(0)
-
-
-class Clip(Processor):
-    """Clip feature values to a narrower range"""
-
-    def __init__(self, a_min=-10, a_max=10):  # 從 [-1e5, 1e5] 縮小到 [-10, 10]
-        self.a_min = a_min
-        self.a_max = a_max
-
-    def __call__(self, df):
-        df = df.clip(self.a_min, self.a_max)
-        return df
