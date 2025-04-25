@@ -214,18 +214,10 @@ class Fillna(Processor):
         if self.fields_group is None:
             df.fillna(self.fill_value, inplace=True)
         else:
-            cols = get_group_columns(df, self.fields_group)
             # this implementation is extremely slow
             # df.fillna({col: self.fill_value for col in cols}, inplace=True)
-
-            # # So we use numpy to accelerate filling values
-            # nan_select = np.isnan(df.values)
-            # nan_select[:, ~df.columns.isin(cols)] = False
-            # df.values[nan_select] = self.fill_value
-            df_values = df[cols].to_numpy()
-            nan_select = np.isnan(df_values)
-            df_values[nan_select] = self.fill_value
-            df.loc[:, cols] = df_values
+            df[self.fields_group] = df[self.fields_group].fillna(
+                self.fill_value)
         return df
 
 
