@@ -36,12 +36,12 @@ class ICLoss(nn.Module):
         ic_all = 0.0
         skip_n = 0
         for start_i, end_i in zip(diff_point, diff_point[1:]):
-            pred_focus = pred[start_i:end_i]  # TODO: just for fake
+            pred_focus = pred[start_i:end_i].squeeze()  # TODO: just for fake
             if pred_focus.shape[0] < self.skip_size:
                 # skip some days which have very small amount of stock.
                 skip_n += 1
                 continue
-            y_focus = y[start_i:end_i]
+            y_focus = y[start_i:end_i].squeeze()
             if pred_focus.std() < EPS or y_focus.std() < EPS:
                 # These cases often happend at the end of test data.
                 # Usually caused by fillna(0.)
@@ -49,8 +49,10 @@ class ICLoss(nn.Module):
                 continue
 
             ic_day = torch.dot(
-                (pred_focus - pred_focus.mean()) / np.sqrt(pred_focus.shape[0]) / pred_focus.std(),
-                (y_focus - y_focus.mean()) / np.sqrt(y_focus.shape[0]) / y_focus.std(),
+                (pred_focus - pred_focus.mean()) /
+                np.sqrt(pred_focus.shape[0]) / pred_focus.std(),
+                (y_focus - y_focus.mean()) /
+                np.sqrt(y_focus.shape[0]) / y_focus.std(),
             )
             ic_all += ic_day
         if len(diff_point) - 1 - skip_n <= 0:
@@ -87,7 +89,8 @@ def preds_to_weight_with_clamp(preds, clip_weight=None, clip_method="tanh"):
                 weights = torch.ones_like(preds)
             else:
                 sm = nn.Sigmoid()
-                weights = sm(preds) * clip_weight  # TODO: The clip_weight is useless here.
+                # TODO: The clip_weight is useless here.
+                weights = sm(preds) * clip_weight
                 weights = weights / torch.sum(weights) * weights.numel()
         else:
             raise ValueError("Unknown clip_method")
